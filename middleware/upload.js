@@ -1,23 +1,8 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 
 
-const uploadPath = "uploads/tasks";
-if (!fs.existsSync(uploadPath)) {
-  fs.mkdirSync(uploadPath, { recursive: true });
-}
-
-// Configuración de almacenamiento
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + path.extname(file.originalname));
-  }
-});
+// 🔹 NO disco, NO carpetas, SOLO memoria
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowed = [
@@ -36,7 +21,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 export const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // Máximo 10 MB
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
 });

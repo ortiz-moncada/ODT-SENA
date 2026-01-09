@@ -4,10 +4,11 @@ const taskSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String, required: true },
   tribute_id: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
-  stateTask: {type: Number,enum: [1, 2, 3, 4, 5], default: 1},
+  stateTask: { type: Number, enum: [1, 2, 3, 4, 5], default: 1 },
   delivery_date: { type: Date },
   workers: [{ type: mongoose.Schema.Types.ObjectId, ref: "users" }],
   area_id: { type: mongoose.Schema.Types.ObjectId, ref: "Area" },
+  leader: { type: mongoose.Schema.Types.ObjectId, ref: "users", required: null },
 
   // ENTREGA DE TAREA
   delivery_file: { type: String, default: null },
@@ -25,17 +26,21 @@ const taskSchema = new mongoose.Schema({
     }
   ],
 
-  deliveredFile: {
-  type: String,
-  default: null,
-},
-driveStatus: {
-  type: String,
-  enum: ["OK", "FAILED", "PENDING"],
-  default: "PENDING",
-},
-deliveredAt: Date,
+  isMonthly: { type: Boolean, default: false },
+  monthlyDay: { type: Number, default: 28 }, // día del mes (1–28 recomendado)
+  parentTask: { type: mongoose.Schema.Types.ObjectId, ref: 'tasks' },
 
+
+  deliveredFile: {
+    type: String,
+    default: null,
+  },
+  driveStatus: {
+    type: String,
+    enum: ["OK", "FAILED", "PENDING"],
+    default: "PENDING",
+  },
+  deliveredAt: Date,
 
 });
 
@@ -46,7 +51,7 @@ taskSchema.virtual("stateName").get(function () {
     2: "En Revisión",
     3: "Completada",
     4: "Rechazada",
-    5:  "Vencida"
+    5: "Vencida"
   };
   return labels[this.stateTask];
 });

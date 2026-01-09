@@ -1,17 +1,18 @@
 import { google } from "googleapis";
 import fs from "fs";
+import { Readable } from "stream";
 
 const CREDENTIALS_PATH = "./credentials-oauth.json";
 const TOKEN_PATH = "./token.json";
-const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 
-//  ID de tu carpeta en Google Drive
+//  Carpeta destino en Drive
 const FOLDER_ID = "1PqHMgnu5MgspMUbz2TZLYTlCfoQSZvaR";
 
-// Función para obtener el cliente OAuth2
+// OAuth
 function getOAuth2Client() {
   const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
-  const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
+  const { client_secret, client_id, redirect_uris } =
+    credentials.installed || credentials.web;
 
   const oAuth2Client = new google.auth.OAuth2(
     client_id,
@@ -25,57 +26,54 @@ function getOAuth2Client() {
   return oAuth2Client;
 }
 
+//  SUBIDA SEGURA (NUNCA TUMBA EL BACKEND)
 export async function uploadToDrive(file) {
+  if (!file || !file.buffer) {
+    console.warn("⚠️ Archivo inválido o sin buffer");
+    return null;
+  }
+
   try {
     const auth = getOAuth2Client();
-    const driveService = google.drive({ version: "v3", auth });
+    const drive = google.drive({ version: "v3", auth });
 
-    const fileMetadata = {
+    console.log(" Subiendo a Drive:", {
       name: file.originalname,
-      parents: [FOLDER_ID], //  Subir a carpeta específica
-    };
+      type: file.mimetype,
+      size: file.size,
+    });
 
-    const media = {
-      mimeType: file.mimetype,
-      body: fs.createReadStream(file.path),
-    };
+    const bufferStream = Readable.from(file.buffer);
 
-    console.log(" Subiendo archivo a Drive:", file.originalname);
-
-    // SUBIR ARCHIVO
-    const response = await driveService.files.create({
-      requestBody: fileMetadata,
-      media: media,
+    const response = await drive.files.create({
+      requestBody: {
+        name: file.originalname,
+        parents: [FOLDER_ID],
+      },
+      media: {
+        mimeType: file.mimetype,
+        body: bufferStream,
+      },
       fields: "id",
     });
 
     const fileId = response.data.id;
-    console.log(" Archivo creado con ID:", fileId);
 
-    // DAR PERMISOS DE LECTURA PUBLICA
-    await driveService.permissions.create({
-      fileId: fileId,
+    //  Público
+    await drive.permissions.create({
+      fileId,
       requestBody: {
         role: "reader",
         type: "anyone",
       },
     });
 
-    console.log(" Permisos públicos asignados");
-
-    // OBTENER LINK PUBLICO
-    const result = await driveService.files.get({
-      fileId: fileId,
-      fields: "id, name, webViewLink, webContentLink",
+    const result = await drive.files.get({
+      fileId,
+      fields: "webViewLink, webContentLink",
     });
 
-    console.log(" Archivo subido exitosamente:", result.data);
-
-    //  ELIMINAR ARCHIVO TEMPORAL
-    if (fs.existsSync(file.path)) {
-      fs.unlinkSync(file.path);
-      console.log(" Archivo temporal eliminado");
-    }
+    console.log(" Drive OK:", result.data);
 
     return {
       id: fileId,
@@ -83,14 +81,9 @@ export async function uploadToDrive(file) {
       webContentLink: result.data.webContentLink,
     };
 
-  } catch (err) {
-    console.error(" Error en uploadToDrive():", err);
-
-    // Limpiar archivo temporal si existe
-    if (file.path && fs.existsSync(file.path)) {
-      fs.unlinkSync(file.path);
-    }
-
-    throw new Error(`Error al subir archivo a Google Drive: ${err.message}`);
+  } catch (error) {
+    console.error("🔥 ERROR REAL GOOGLE DRIVE:");
+    console.error(error?.response?.data || error.message);
+    return null; // 👈 CLAVE: NO ROMPER NADA
   }
 }

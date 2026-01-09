@@ -1,342 +1,231 @@
-// controllers/tasks.js
 import mongoose from "mongoose";
 import Task from "../models/tasks.js";
-import { uploadToDrive } from "../utils/googleDrive.js"; // Utilidad que CREASTE
-import { enviarCorreoCreacionTarea } from "../utils/taskEmails.js";
+import { uploadToDrive } from "../utils/googleDrive.js";
+import { enviarCorreoCreacionTarea, enviarCorreoCambioEstadoTarea } from "../utils/taskEmails.js";
 
-
+const getMonthlyTasks = async (req, res) => {
+  const tasks = await Task.find({ isMonthly: true }).populate("workers", "names gmail").populate("leader", "names gmail");
+  res.json(tasks);
+};
 
 const postTasks = async (req, res) => {
+       console.log('📥 req.body recibido:', req.body);
+    console.log('🔍 isMonthly (raw):', req.body.isMonthly, 'tipo:', typeof req.body.isMonthly);
   try {
-    let { name, description, tribute_id, stateTask, delivery_date, workers, area_id } = req.body;
 
-    console.log(" Datos recibidos en POST /tasks/create:", req.body);
+    let { name, description, tribute_id, stateTask, delivery_date, workers, leader, area_id, isMonthly, monthlyDay } = req.body;
 
-
-    // VALIDACIONES
-    if (!area_id || !mongoose.Types.ObjectId.isValid(area_id)) {
-      return res.status(400).json({ error: "El área es obligatoria y debe ser válida" });
+    if (!name || !description) {
+      return res.status(400).json({ error: "Nombre y descripción son obligatorios" });
     }
 
-    //  ARREGLAR tribute_id = undefined
+    if (!area_id || !mongoose.Types.ObjectId.isValid(area_id)) {
+      return res.status(400).json({ error: "Área inválida" });
+    }
+
+    isMonthly = isMonthly === true || isMonthly === "true";
+
+    if (isMonthly) {
+      if (!monthlyDay || monthlyDay < 1 || monthlyDay > 28) {
+        return res.status(400).json({ error: "Debe indicar un día válido del mes (1–28)" });
+      }
+      delivery_date = undefined;
+    } else {
+      if (!delivery_date || delivery_date === "undefined" || delivery_date === "null") {
+        return res.status(400).json({ error: "La fecha de entrega es obligatoria para tareas no mensuales" });
+      }
+    }
+
     let tributeValue = null;
-    if (tribute_id && 
-        tribute_id !== "null" && 
-        tribute_id !== "undefined" && 
-        tribute_id !== "0" && 
-        tribute_id !== "Seleccione") {
-      
+    if (tribute_id && tribute_id !== "null" && tribute_id !== "undefined" && tribute_id !== "0") {
       if (!mongoose.Types.ObjectId.isValid(tribute_id)) {
-        return res.status(400).json({ error: "El tribute_id no es válido" });
+        return res.status(400).json({ error: "tribute_id inválido" });
       }
       tributeValue = tribute_id;
     }
 
+    if (typeof workers === "string") {
+      workers = JSON.parse(workers);
+    }
+
     if (!Array.isArray(workers) || workers.length === 0) {
-      return res.status(400).json({ error: "Debe proporcionar al menos un trabajador" });
+      return res.status(400).json({ error: "Debe haber al menos un worker" });
     }
 
-    const invalidWorkerIds = workers.filter(id => !mongoose.Types.ObjectId.isValid(id));
-    if (invalidWorkerIds.length > 0) {
-      return res.status(400).json({ error: "IDs de trabajadores no válidos", invalidWorkerIds });
+    const invalidWorkers = workers.filter((id) => !mongoose.Types.ObjectId.isValid(id));
+    if (invalidWorkers.length) {
+      return res.status(400).json({ error: "Workers inválidos", invalidWorkers });
     }
 
-    // SUBIR ARCHIVOS A DRIVE
-    const attached_files = [];
-
-    if (req.files && req.files.length > 0) {
-      console.log(` Subiendo ${req.files.length} archivo(s) a Google Drive...`);
-
-      for (const file of req.files) {
-        try {
-          const driveFile = await uploadToDrive(file);
-
-          if (!driveFile || !driveFile.webViewLink) {
-            console.error(" uploadToDrive no retornó webViewLink:", driveFile);
-            return res.status(500).json({
-              error: "Error al subir archivo a Google Drive",
-              details: "No se recibió webViewLink del archivo"
-            });
-          }
-
-          attached_files.push({
-            filename: file.originalname,
-            url: driveFile.webViewLink,
-            drive_id: driveFile.id,
-            uploaded_at: new Date()
-          });
-
-          console.log(" Archivo subido:", file.originalname);
-
-        } catch (uploadError) {
-          console.error(" Error al subir archivo:", uploadError);
-          return res.status(500).json({
-            error: "Error al subir archivo a Google Drive",
-            details: uploadError.message
-          });
-        }
+    if (workers.length > 1) {
+      if (!leader || !mongoose.Types.ObjectId.isValid(leader)) {
+        return res.status(400).json({ error: "Líder inválido" });
+      }
+      if (!workers.includes(leader)) {
+        return res.status(400).json({ error: "El líder debe pertenecer a los workers" });
       }
     } else {
-      console.log("⚠️ No se enviaron archivos adjuntos");
+      leader = workers[0];
     }
 
-    // CREAR TAREA
-    const newTask = new Task({
-      name,
-      description,
-      tribute_id: tributeValue,
-      stateTask: stateTask || 1,
-      delivery_date,
-      workers,
-      area_id,
-      attached_files
-    });
+    const attached_files = [];
+    if (req.files?.length) {
+      for (const file of req.files) {
+        const driveFile = await uploadToDrive(file);
+        if (!driveFile) continue;
+        attached_files.push({ filename: file.originalname, url: driveFile.webViewLink, drive_id: driveFile.id, uploaded_at: new Date() });
+      }
+    }
 
+    const newTask = new Task({ name, description, tribute_id: tributeValue, stateTask: stateTask || 1, ...(delivery_date ? { delivery_date } : {}), workers, leader, area_id, attached_files, isMonthly, ...(isMonthly ? { monthlyDay } : {}) });
     await newTask.save();
 
-    const taskPopulated = await Task.findById(newTask._id)
-      .populate("workers", "names gmail rol state")
-      .populate("area_id", "name")
-      .populate("tribute_id", "names gmail");
-setImmediate(async () => {
-  try {
-    const { enviarCorreoCreacionTarea } = await import("../utils/taskEmails.js");
-    await enviarCorreoCreacionTarea(taskPopulated);
-  } catch (e) {
-    console.error("⚠️ Error correo:", e.message);
-  }
-});
-    res.status(201).json({
-      message: "Tarea creada con éxito",
-      task: taskPopulated
+    const taskPopulated = await Task.findById(newTask._id).populate("workers", "names gmail").populate("leader", "names gmail").populate("area_id", "name");
+
+    setImmediate(async () => {
+      try {
+        await enviarCorreoCreacionTarea(taskPopulated);
+      } catch (e) {
+        console.error("⚠️ Error correo creación:", e.message);
+      }
     });
 
+    res.status(201).json({ message: "Tarea creada con éxito", task: taskPopulated });
   } catch (error) {
-    console.error("❌ Error al crear tarea:", error);
-    res.status(500).json({ 
-      error: "Error al crear tarea", 
-      details: error.message 
-    });
+    console.error("❌ postTasks:", error);
+    res.status(500).json({ error: "Error al crear tarea", details: error.message });
   }
 };
 
-//  GET: VER TODAS LAS TAREAS
-const getTasks = async (req, res) => {
-  try {
-    const tasks = await Task.find().populate("workers", "names gmail rol state");
-    res.json(tasks);
-  } catch (error) {
-    res.status(400).json({ error: "Error al ver las tareas" });
-  }
-};
-
-
-// GET: TAREAS POR TRABAJADOR
-const getTasksByWorker = async (req, res) => {
-  try {
-    const { worker } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(worker)) {
-      return res.status(400).json({ error: "ID del usuario no válido" });
-    }
-
-    const tasks = await Task.find({ workers: worker }).populate("workers", "names gmail rol state");
-
-    if (!tasks.length) {
-      return res.status(404).json({ message: "No hay tareas asignadas" });
-    }
-
-    res.json(tasks);
-  } catch (error) {
-    res.status(400).json({ error: "Error al obtener tareas del usuario" });
-  }
-};
-
-
-// PUT: ACTUALIZAR TAREA
 const putTasks = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: "ID no válido" });
+      return res.status(400).json({ error: "ID inválido" });
     }
 
-    const updateData = req.body;
+    // ✅ PRIMERO obtener la tarea
+    const taskAntes = await Task.findById(id).populate("workers", "names gmail").populate("leader", "names gmail");
 
-    if (updateData.workers) {
-      req.body.workers = JSON.parse(req.body.workers);
-
-      if (!Array.isArray(updateData.workers)) {
-        return res.status(400).json({ error: "Workers debe ser array" });
-      }
-
-      const invalidIds = updateData.workers.filter(w => !mongoose.Types.ObjectId.isValid(w));
-      if (invalidIds.length > 0) {
-        return res.status(400).json({ error: "IDs no válidos", invalidIds });
-      }
-    }
-
-    // =========================
-    // AGREGAR NUEVOS ARCHIVOS A DRIVE
-    // =========================
-    if (req.files && req.files.length > 0) {
-      const newFiles = [];
-
-      for (const file of req.files) {
-        const driveFile = await uploadToDrive(file);
-
-        newFiles.push({
-          filename: file.originalname,
-          url: driveFile.webViewLink,
-          drive_id: driveFile.id,
-          uploaded_at: new Date()
-        });
-      }
-
-      updateData.$push = { attached_files: { $each: newFiles } };
-    }
-
-    const updatedTask = await Task.findByIdAndUpdate(id, updateData, { new: true })
-      .populate("workers", "names gmail rol state");
-
-    if (!updatedTask) {
+    if (!taskAntes) {
       return res.status(404).json({ error: "Tarea no encontrada" });
     }
 
-    res.json({ message: "Tarea actualizada", task: updatedTask });
+    const estadoAnterior = taskAntes.stateTask;
+    const updateData = { ...req.body };
 
+    // ✅ AHORA SÍ usar taskAntes
+    if (taskAntes.parentTask) {
+      delete updateData.isMonthly;
+      delete updateData.monthlyDay;
+    }
+
+    if (updateData.isMonthly) {
+      if (!updateData.monthlyDay || updateData.monthlyDay < 1 || updateData.monthlyDay > 28) {
+        return res.status(400).json({ error: "monthlyDay inválido (1–28)" });
+      }
+    }
+
+    if (req.files?.length) {
+      if (String(taskAntes.leader._id) !== String(userId)) {
+        return res.status(403).json({ error: "Solo el líder puede adjuntar archivos" });
+      }
+    }
+
+    if (updateData.workers) {
+      if (typeof updateData.workers === "string") {
+        updateData.workers = JSON.parse(updateData.workers);
+      }
+      if (!Array.isArray(updateData.workers)) {
+        return res.status(400).json({ error: "Workers debe ser array" });
+      }
+    }
+
+    if (req.files?.length) {
+      const newFiles = [];
+      for (const file of req.files) {
+        const driveFile = await uploadToDrive(file);
+        if (!driveFile) continue;
+        newFiles.push({ filename: file.originalname, url: driveFile.webViewLink, drive_id: driveFile.id, uploaded_at: new Date() });
+      }
+      if (newFiles.length) {
+        updateData.$push = { attached_files: { $each: newFiles } };
+      }
+    }
+
+    const updatedTask = await Task.findByIdAndUpdate(id, updateData, { new: true }).populate("workers", "names gmail").populate("leader", "names gmail");
+
+    if (updateData.stateTask !== undefined && Number(updateData.stateTask) !== Number(estadoAnterior)) {
+      setImmediate(async () => {
+        try {
+          await enviarCorreoCambioEstadoTarea(updatedTask, estadoAnterior);
+        } catch (e) {
+          console.error("⚠️ Error correo estado:", e.message);
+        }
+      });
+    }
+
+    res.json({ message: "Tarea actualizada", task: updatedTask });
   } catch (error) {
+    console.error("❌ putTasks:", error.message);
     res.status(400).json({ error: "Error al actualizar tarea", details: error.message });
   }
 };
 
-
-// GET: TAREAS ACTIVAS
-const getActiveTasks = async (req, res) => {
-  try {
-    const tasks = await Task.find({ stateTask: 1 })
-      .populate("workers", "names gmail rol state");
-    res.json(tasks);
-  } catch (error) {
-    res.status(400).json({ error: "Error al obtener activas" });
-  }
-};
-
-
-// GET: TAREAS INACTIVAS
-const getInactiveTasks = async (req, res) => {
-  try {
-    const tasks = await Task.find({ stateTask: 2 })
-      .populate("workers", "names gmail rol state");
-    res.json(tasks);
-  } catch (error) {
-    res.status(400).json({ error: "Error al obtener inactivas" });
-  }
-};
-
-
-/* // PUT: ENTREGAR TAREA
-const deliverTask = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { delivery_comment, delivered_by } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: "ID de tarea inválido" });
-    }
-    if (!mongoose.Types.ObjectId.isValid(delivered_by)) {
-      return res.status(400).json({ error: "ID de usuario inválido" });
-    }
-
-    let delivery_file = null;
-
-    // =========================
-    // SUBIR ARCHIVO DE ENTREGA A DRIVE
-    // =========================
-    if (req.file) {
-      const driveFile = await uploadToDrive(req.file);
-      delivery_file = driveFile.webViewLink;
-    }
-
-    const updated = await Task.findByIdAndUpdate(
-      id,
-      {
-        delivery_file,
-        delivery_comment,
-        delivery_date_real: new Date(),
-        delivered_by,
-        stateTask: 2
-      },
-      { new: true }
-    ).populate("delivered_by", "names gmail");
-
-    if (!updated) {
-      return res.status(404).json({ error: "Tarea no encontrada" });
-    }
-
-    res.json({ message: "Tarea entregada", task: updated });
-
-  } catch (error) {
-    console.error("❌ Error al entregar tarea:", error);
-    res.status(500).json({ error: "Error al entregar tarea" });
-  }
-
-
-
-}; */
-
-// POST: ENTREGAR TAREA (NUEVA)
 const entregarTarea = async (req, res) => {
   try {
     const { id } = req.params;
-    const file = req.file;
+    const userId = req.user.id;
 
-    let driveFile = null;
+    const taskAntes = await Task.findById(id).populate("workers", "names gmail").populate("leader", "names gmail");
 
-    if (file) {
-      try {
-        driveFile = await uploadToDrive(file);
-      } catch (driveError) {
-        console.error("⚠️ Drive falló, pero la tarea continúa:", driveError.message);
-      }
+    if (!taskAntes) {
+      return res.status(404).json({ error: "Tarea no encontrada" });
     }
 
-    const task = await Task.findByIdAndUpdate(
-      id,
-      {
-        stateTask: 2, 
-        deliveredAt: new Date(),
-        deliveredFile: driveFile?.webViewLink || null,
-        driveStatus: driveFile ? "OK" : "FAILED",
-      },
-      { new: true }
-    );
+    if (String(taskAntes.leader._id) !== String(userId)) {
+      return res.status(403).json({ error: "Solo el líder puede entregar la tarea" });
+    }
 
-    res.json({
-      message: "Tarea entregada correctamente",
-      task,
-      driveWarning: !driveFile
-        ? "Archivo no subido a Drive, se guardará posteriormente"
-        : null,
-    });
+    let driveFile = null;
+    if (req.file) {
+      driveFile = await uploadToDrive(req.file);
+    }
 
+    const task = await Task.findByIdAndUpdate(id, { stateTask: 2, deliveredAt: new Date(), deliveredFile: driveFile?.webViewLink || null }, { new: true }).populate("workers", "names gmail");
+
+    if (taskAntes.stateTask !== 2) {
+      setImmediate(async () => {
+        try {
+          await enviarCorreoCambioEstadoTarea(task, taskAntes.stateTask);
+        } catch (e) {
+          console.error("⚠️ Error correo entrega:", e.message);
+        }
+      });
+    }
+
+    res.json({ message: "Tarea entregada", task });
   } catch (error) {
-    console.error("❌ Error crítico en entregar Tarea:", error);
-    res.status(500).json({
-      error: "Error al entregar tarea",
-    });
+    res.status(500).json({ error: "Error al entregar tarea" });
   }
 };
 
-
-
-export {
-  postTasks,
-  getTasks,
-  getTasksByWorker,
-  putTasks,
-  getActiveTasks,
-  getInactiveTasks,
-  entregarTarea
+const getTasks = async (req, res) => {
+  const tasks = await Task.find().populate("workers", "names gmail").populate("leader", "names gmail");
+  res.json(tasks);
 };
+
+const getTasksByWorker = async (req, res) => {
+  const { worker } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(worker)) {
+    return res.status(400).json({ error: "Worker inválido" });
+  }
+
+  const tasks = await Task.find({ workers: worker }).populate("workers", "names gmail").populate("leader", "names gmail");
+  res.json(tasks);
+};
+
+export { postTasks, putTasks, getTasks, getTasksByWorker, entregarTarea, getMonthlyTasks };
