@@ -28,7 +28,7 @@ app.use("/notify", notificationRoutes);
 
 // Ruta de prueba
 app.get("/", (req, res) => {
-  res.send("🚀 Backend funcionando correctamente");
+  res.send("Backend funcionando correctamente");
 });
 
 // Puerto
@@ -37,12 +37,12 @@ const PORT = process.env.PORT || 4000;
 mongoose
   .connect(process.env.CNX_MONGO)
   .then(() => {
-    console.log("✅ Conectado a MongoDB");
+    console.log(" Conectado a MongoDB");
 
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+      console.log(` Servidor corriendo en puerto ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("❌ Error conectando a MongoDB:", err);
+    console.error(" Error conectando a MongoDB:", err);
   });
