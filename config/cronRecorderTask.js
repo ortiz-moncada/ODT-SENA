@@ -1,18 +1,10 @@
 import cron from "node-cron";
 import Task from "../models/tasks.js";
-import users from "../models/users.js";
-import nodemailer from "nodemailer";
+import { transporter } from "../config/email.js"; 
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 const mensajesRecordatorio = [
   " La fecha de entrega se acerca, no olvides completar tu tarea.",
