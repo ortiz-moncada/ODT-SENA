@@ -86,13 +86,13 @@ const postTasks = async (req, res) => {
       try {
         await enviarCorreoCreacionTarea(taskPopulated);
       } catch (e) {
-        console.error("⚠️ Error correo creación:", e.message);
+        console.error(" Error correo creación:", e.message);
       }
     });
 
     res.status(201).json({ message: "Tarea creada con éxito", task: taskPopulated });
   } catch (error) {
-    console.error("❌ postTasks:", error);
+    console.error(" postTasks:", error);
     res.status(500).json({ error: "Error al crear tarea", details: error.message });
   }
 };
