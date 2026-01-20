@@ -29,7 +29,6 @@ const ensureJefaturaArea = async () => {
   }
 };
 
-
 const loginUser = async (req, res) => {
   const { gmail, password } = req.body;
 
@@ -270,7 +269,6 @@ const getUser = async (req, res) => {
   }
 };
 
-
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -321,7 +319,6 @@ const getUserById = async (req, res) => {
     res.status(500).json({ error: "Error al obtener usuario", details: error.message });
   }
 };
-
 
 const putUser = async (req, res) => {
   try {
@@ -445,7 +442,6 @@ const getInactive = async (req, res) => {
     res.status(500).json({ error: "Falla en la operación", details: error.message });
   }
 };
-
 
 const getCorreo = async (req, res) => {
   try {

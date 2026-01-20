@@ -18,8 +18,9 @@ dotenv.config();
 const app = express();
 
 const allowedOrigins = [
-  'http://localhost:5173',      // Siempre permitir desarrollo local
-  process.env.FRONTEND_URL      // URL de producción desde .env
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL
 ].filter(Boolean); 
 
 app.use(cors({
@@ -39,16 +40,53 @@ app.use(fileUpload({
   debug: true
 }));
 
+console.log("\n📍 ================================");
+console.log("📍 REGISTRANDO RUTAS PRINCIPALES");
+console.log("📍 ================================\n");
+
 // Rutas
 app.use("/users", userRoutes);
+console.log("✅ Rutas /users registradas");
+
 app.use("/api/email", emailRoutes);
+console.log("✅ Rutas /api/email registradas");
+
 app.use("/areas", areaRouter);
+console.log("✅ Rutas /areas registradas");
+
 app.use("/tasks", taskRouter);
+console.log("✅ Rutas /tasks registradas");
+
 app.use("/notify", notificationRoutes);
+console.log("✅ Rutas /notify registradas");
+
 app.use("/api/drive", driveRoutes);
+console.log("✅ Rutas /api/drive registradas");
+
+console.log("\n📍 ================================");
+console.log("📍 TODAS LAS RUTAS REGISTRADAS");
+console.log("📍 ================================\n");
+
+// Middleware de debug para TODAS las peticiones
+app.use((req, res, next) => {
+  console.log(`\n🌐 ${req.method} ${req.url}`);
+  console.log(`📦 Body:`, req.body);
+  console.log(`📝 Query:`, req.query);
+  next();
+});
 
 app.get("/", (req, res) => {
   res.send("Backend funcionando correctamente");
+});
+
+// Middleware para rutas no encontradas
+app.use((req, res) => {
+  console.log(`❌ Ruta no encontrada: ${req.method} ${req.url}`);
+  res.status(404).json({ 
+    error: "Ruta no encontrada",
+    method: req.method,
+    url: req.url
+  });
 });
 
 const PORT = process.env.PORT || 4000;
@@ -56,10 +94,13 @@ const PORT = process.env.PORT || 4000;
 mongoose
   .connect(process.env.CNX_MONGO)
   .then(() => {
-    console.log("✅ Conectado a MongoDB");
+    console.log("\n✅ Conectado a MongoDB");
     console.log("🌐 CORS habilitado para:", allowedOrigins);
     app.listen(PORT, () => {
+      console.log(`\n🚀 ================================`);
       console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+      console.log(`🚀 http://localhost:${PORT}`);
+      console.log(`🚀 ================================\n`);
     });
   })
   .catch((err) => {

@@ -16,7 +16,7 @@ router.put("/reset-password/:id", async (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    console.log("🔄 Restableciendo contraseña para usuario:", id);
+    console.log(" Restableciendo contraseña para usuario:", id);
 
     if (!password || password.length < 6) {
       return res.status(400).json({

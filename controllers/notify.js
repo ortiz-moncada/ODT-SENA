@@ -1,5 +1,6 @@
 import Notification from "../models/notify.js";
 
+// controllers/notify.js
 export const createNotification = async (req, res) => {
   try {
     const {
@@ -7,20 +8,13 @@ export const createNotification = async (req, res) => {
       nameTask,
       description,
       deliveryDate,
-      task_id,   //  FALTABA
+      task_id,
       user_id,
-      area_id
+      area_id,
+      isOwnChange
     } = req.body;
 
-    //  VALIDACIÓN REAL
-    if (
-      !title ||
-      !nameTask ||
-      !description ||
-      !task_id ||
-      !user_id ||
-      !area_id
-    ) {
+    if (!title || !nameTask || !description || !task_id || !user_id || !area_id) {
       return res.status(400).json({
         message: "Campos obligatorios incompletos"
       });
@@ -53,29 +47,14 @@ export const createNotification = async (req, res) => {
 
 export const getNotifications = async (req, res) => {
   try {
-    const { rol, userId, areaId } = req.query;
+    const { rol, userId } = req.query;
 
-    if (!rol) {
+    if (!rol || !userId) {
       return res.status(400).json({
-        message: "Rol requerido"
+        message: "Rol y userId requeridos"
       });
     }
-
-    let filter = {};
-
-
-    if (Number(rol) === 3) {
-      filter.user_id = userId;
-    }
-
-
-    else if (Number(rol) === 2) {
-      filter.area_id = areaId;
-    }
-
-    else if (Number(rol) === 1) {
-      filter = {};
-    }
+    const filter = { user_id: userId };
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 });
@@ -88,7 +67,6 @@ export const getNotifications = async (req, res) => {
     });
   }
 };
-
 
 export const deleteNotification = async (req, res) => {
   try {
@@ -115,20 +93,29 @@ export const deleteNotification = async (req, res) => {
 
 export const deleteNotifications = async (req, res) => {
   try {
-    const { rol, userId, areaId } = req.query;
+    const { userId } = req.query;
 
-    let filter = {};
+    if (!userId) {
+      return res.status(400).json({
+        message: "userId requerido"
+      });
+    }
 
-    if (rol === "3") filter.user = userId;
-    if (rol === "2") filter.area = areaId;
-    if (rol === "1") filter = {};
+    // TODOS eliminan solo SUS propias notificaciones
+    const filter = { user_id: userId };
 
-    await Notification.deleteMany(filter);
+    const result = await Notification.deleteMany(filter);
 
-    res.json({ message: "Notificaciones eliminadas correctamente" });
+    res.json({
+      success: true,
+      message: `${result.deletedCount} notificaciones eliminadas correctamente`,
+      deletedCount: result.deletedCount
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error al eliminar notificaciones" });
+    console.error("Error al eliminar notificaciones:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al eliminar notificaciones"
+    });
   }
 };
-
