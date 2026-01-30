@@ -1,245 +1,164 @@
-import readline from "readline";
-import "dotenv/config";
-import { google } from "googleapis";
-const { OAuth2 } = google.auth;
-import fs from "fs";
-import path from "path";
-import url from "url";
-import uploadFile from "./utils/uploadFile.util.js";
+import { google } from 'googleapis';
+import { Readable } from 'stream';
+import fs from 'fs';
+import dotenv from 'dotenv';
 
-const driveServices = {};
+dotenv.config();
 
-const {
-  CLIENT_ID_DRIVE,
-  CLIENT_SECRET,
-  REDIRECT_URI,
-  DRIVE_REFRESH_TOKEN,
-  ID_FOLDER_DRIVE,
-} = process.env;
-
-const generateAuthCredentials = () => {
-  const SCOPES = ["https://www.googleapis.com/auth/drive"];
-
-  const oAuth2Client = new OAuth2(CLIENT_ID_DRIVE, CLIENT_SECRET, REDIRECT_URI);
-
-  const authUrl = oAuth2Client.generateAuthUrl({
-    access_type: "offline",
-    scope: SCOPES,
-  });
-
-  console.log("1. Autoriza esta aplicación abriendo esta URL en tu navegador:");
-  console.log(authUrl);
-
-  const readLine = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  readLine.question(
-    "2. Pega el código que Google te dio después de la autorización: ",
-    (code) => {
-      readLine.close();
-
-      oAuth2Client.getToken(code, (error, token) => {
-        if (error) {
-          return console.error("Error al obtener el token:", error);
-        }
-        console.log(`REFRESH_TOKEN: ${token.refresh_token}`);
-        console.log(`ACCESS_TOKEN: ${token.access_token}`);
-      });
+// ✅ OAUTH2 CON AUTO-REFRESH
+async function getDriveAuth() {
+  try {
+    console.log('🔐 Iniciando autenticación con Google Drive (OAuth2)...');
+    
+    const { CLIENT_ID_DRIVE, CLIENT_SECRET, DRIVE_REFRESH_TOKEN } = process.env;
+    
+    if (!CLIENT_ID_DRIVE || !CLIENT_SECRET || !DRIVE_REFRESH_TOKEN) {
+      throw new Error('Faltan credenciales OAuth2 en .env');
     }
-  );
-};
 
-const getDriveClient = async () => {
-  const oAuth2Client = new OAuth2(CLIENT_ID_DRIVE, CLIENT_SECRET, REDIRECT_URI);
-  oAuth2Client.setCredentials({ refresh_token: DRIVE_REFRESH_TOKEN });
-  return google.drive({ version: "v3", auth: oAuth2Client });
-};
+    const oauth2Client = new google.auth.OAuth2(
+      CLIENT_ID_DRIVE,
+      CLIENT_SECRET,
+      'http://localhost:4000/oauth2callback'
+    );
 
-const permissionFile = async (fileId) => {
-  try {
-    const drive = await getDriveClient();
-    await drive.permissions.create({
-      fileId: fileId,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone',
-      },
+    // Configurar refresh token
+    oauth2Client.setCredentials({
+      refresh_token: DRIVE_REFRESH_TOKEN
     });
+
+    // El cliente automáticamente refrescará el access token cuando expire
+    console.log('✅ OAuth2 configurado con auto-refresh');
+    
+    return oauth2Client;
+
   } catch (error) {
-    return ({ msg: "Ha ocurrido un error en la verificación de permisos. Por favor, intenta más tarde.", error });
+    console.error('❌ Error al autenticar:', error.message);
+    throw error;
   }
 }
 
-driveServices.listFolders = async (parentFolderId) => {
+// ✅ SUBIR ARCHIVOS
+async function uploadFileToDrive(files, folderName, apprenticeData, projectId = null, parentFolderId = null) {
   try {
-    const drive = await getDriveClient();
-    const response = await drive.files.list({
-      q: `'${parentFolderId}' in parents and trashed = false`,
-      fields: "files(id, name)",
-      spaces: "drive",
-    });
-    const folders = response.data.files;
-    return ({ success: true, folders: folders, size: folders.length });
-  } catch (error) {
-    console.error("Error al listar carpetas:", error);
-    return ({
-      success: false,
-      msg: "Error al obtener la lista de carpetas de Drive.",
-    });
-  }
-};
+    console.log('');
+    console.log('📤 =================================================');
+    console.log('   INICIANDO SUBIDA A GOOGLE DRIVE (OAuth2)');
+    console.log('📤 =================================================');
 
-driveServices.findOrCreateFolder = async (folderName, folderId = ID_FOLDER_DRIVE) => {
-  const parameter = `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and name contains '${folderName}' and trashed=false`;
+    const auth = await getDriveAuth();
+    const drive = google.drive({ version: 'v3', auth });
 
-  const drive = await getDriveClient();
+    const targetFolderId = parentFolderId || process.env.ID_FOLDER_DRIVE;
 
-  const response = await drive.files.list({
-    q: parameter,
-    fields: "files(id, name)",
-    spaces: "drive",
-  });
+    if (!targetFolderId) {
+      throw new Error('❌ ID_FOLDER_DRIVE no configurado');
+    }
 
-  const existingFolder = response.data.files[0];
+    console.log('📁 Carpeta destino ID:', targetFolderId);
 
-  if (existingFolder) {
-    return existingFolder.id;
-  }
-  else {
-    const folderMetadata = {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: [folderId],
-    };
-    const newFolder = await drive.files.create({
-      resource: folderMetadata,
-      fields: "id",
-    });
+    const uploadedFiles = [];
+    const fileArray = files.file 
+      ? (Array.isArray(files.file) ? files.file : [files.file])
+      : Object.values(files);
 
-    return newFolder.data.id;
-  }
-};
+    console.log(`📦 Total de archivos: ${fileArray.length}`);
 
-driveServices.downloadFileFromDrive = async (req, res) => {
-  try {
-    let { fileId } = req.params;
-    await permissionFile(fileId);
-    const fileUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-    res.status(200).json({ msg: { fileUrl } });
-  } catch (error) {
-    res.status(500).json({
-      msg: "Ha ocurrido un error en el servidor. Por favor, intenta más tarde.",
-      error,
-    });
-  }
-};
-
-driveServices.viewFileFromDrive = async (req, res) => {
-  try {
-    let { fileId } = req.params;
-    await permissionFile(fileId);
-    const fileUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-    res.status(200).json({ msg: { fileUrl } });
-  }
-  catch (error) {
-    res.status(500).json({ msg: "Ha ocurrido un error en el servidor. Por favor, intenta más tarde.", error, })
-  };
-}
-
-driveServices.uploadFileToDrive = async (files, activityType, apprentice = null, fileId = null, folderParent,) => {
-
-  let fileNames = await uploadFile(files, ["pdf", "jpg"]);
-
-  if (fileNames.ok === false) {
-    return { ok: false, msg: fileNames.msg };
-  }
-
-  const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-
-  // Aseguramos que sea un array, así podemos iterar
-  if (!Array.isArray(fileNames)) fileNames = [fileNames];
-
-  const drive = await getDriveClient();
-  const mimeType = Array.isArray(files.file) ? files.file[0].mimetype : files.file.mimetype;
-
-  const uploadedFiles = [];
-
-  try {
-
-    for (const fileName of fileNames) {
-      const filePath = path.join(__dirname, "uploads/", fileName);
-      // ACTUALIZAR ARCHIVO SI SE ENVIA EL fileId
-      if (fileId != null) {
-        const findToFile = await drive.files.get({
-          fileId,
-          fields: "id",
-        });
-        if (findToFile.data.id) {
-          await drive.files.update({
-            fileId,
-            media: {
-              mimeType: mimeType,
-              body: fs.createReadStream(filePath),
-            },
-          });
-          uploadedFiles.push({ id: fileId });
-          continue;
-        }
-      }
-      // Buscar o crear carpeta destino
-      const folderResult = await driveServices.findOrCreateFolder(`${activityType}`, folderParent);
-
-
-      // Contar cuántos archivos hay en esa carpeta
-      const result = await driveServices.listFolders(folderResult);
-      const fileNumber = result.size + 1;
-
-      let newFileName = null;
-
-      if (apprentice != null) {
-        newFileName = `${fileNumber}_${activityType}_${apprentice.firstName}_${apprentice.lastName}_${apprentice.documentNumber}`;
-      } else {
-        newFileName = `${fileNumber}_${activityType}`;
-      }
+    for (const file of fileArray) {
+      console.log('');
+      console.log(`📄 Procesando: ${file.name}`);
+      console.log(`   Tamaño: ${file.size} bytes`);
 
       const fileMetadata = {
-        name: newFileName,
-        parents: [folderResult],
+        name: file.name,
+        parents: [targetFolderId]
       };
 
       const media = {
-        mimeType: mimeType,
-        body: fs.createReadStream(filePath),
+        mimeType: file.mimetype,
+        body: file.data 
+          ? Readable.from(file.data)
+          : fs.createReadStream(file.tempFilePath)
       };
+
+      console.log('⏳ Subiendo...');
 
       const response = await drive.files.create({
         resource: fileMetadata,
         media: media,
-        fields: "id, name",
+        fields: 'id, name, mimeType, webViewLink'
       });
 
-      uploadedFiles.push({
-        msg: "Archivo guardado correctamente",
-        fileNumber,
-        id: response.data.id,
-        name: response.data.name,
-      });
+      console.log('✅ Subido exitosamente');
+      console.log(`   ID: ${response.data.id}`);
+      console.log(`   URL: https://drive.google.com/file/d/${response.data.id}/view`);
 
-      fs.unlinkSync(filePath);
+      // Hacer público
+      try {
+        await drive.permissions.create({
+          fileId: response.data.id,
+          requestBody: {
+            role: 'reader',
+            type: 'anyone'
+          }
+        });
+        console.log('✅ Archivo público');
+      } catch (permError) {
+        console.warn('⚠️ No se pudo hacer público');
+      }
+
+      uploadedFiles.push(response.data);
     }
 
+    console.log('');
+    console.log('✅ =================================================');
+    console.log(`   ${uploadedFiles.length} ARCHIVO(S) SUBIDO(S)`);
+    console.log('✅ =================================================');
+    console.log('');
+
     return {
-      response: uploadedFiles.length === 1 ? [uploadedFiles[0]] : uploadedFiles,
+      ok: true,
+      response: uploadedFiles
     };
+
   } catch (error) {
-    console.error("Error al subir el archivo a Google Drive:", error);
+    console.error('');
+    console.error('❌ ERROR AL SUBIR');
+    console.error('Mensaje:', error.message);
+    console.error('');
+    
     return {
       ok: false,
-      msg: "Ha ocurrido un error al subir el archivo a Google Drive. Por favor, intenta de nuevo.",
+      msg: 'Error al subir archivo',
+      error: error.message
     };
   }
+}
+
+async function testDriveConnection() {
+  try {
+    const auth = await getDriveAuth();
+    const drive = google.drive({ version: 'v3', auth });
+
+    const res = await drive.files.list({
+      pageSize: 5,
+      fields: 'files(id, name)',
+    });
+
+    console.log('✅ Conexión exitosa');
+    console.log(`📁 Archivos: ${res.data.files.length}`);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    return false;
+  }
+}
+
+export const driveServices = {
+  uploadFileToDrive,
+  getDriveAuth,
+  testDriveConnection
 };
 
-export { driveServices };
+export default driveServices;

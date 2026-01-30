@@ -1,63 +1,92 @@
-import { transporter } from "../config/email.js";  
+import { transporter } from "../config/email.js";
 
 export const sendEmail = async (req, res) => {
   const { to, subject, message } = req.body;
 
   try {
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    await transporter.sendMail({
+      from: `"Sistema ODT" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html: `<p>${message}</p>`,
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
-    res.status(200).json({ success: true, message: "Correo enviado correctamente" });
+    res.status(200).json({
+      success: true,
+      message: "Correo enviado correctamente",
+    });
+
   } catch (error) {
     console.error("❌ Error enviando correo:", error);
-    res.status(500).json({ success: false, message: "Error al enviar el correo", error: error.message });
+
+    res.status(500).json({
+      success: false,
+      message: "Error al enviar el correo",
+    });
   }
 };
 
-export const restablecerContraseña = async (req, res) => {
-  const { to, subject } = req.body;
 
-  try {
-    const frontendUrl = process.env.FRONTEND_URL; 
-    const resetLink = `${frontendUrl}/restablecer`; 
+export const sendRecoveryEmail = async ({ to, name, link }) => {
+  await transporter.sendMail({
+    from: `"SENA ODT" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: "Restablecimiento de contraseña",
+    attachments: [
+      {
+        filename: "logo.png",
+        path: "./image/logo-sena-blanco.png",
+        cid: "logoSistema",
+      },
+    ],
+    html: `
+      <div style="font-family: Arial, Helvetica, sans-serif; background:#f4f6f9; padding:30px;">
+        <div style="max-width:600px; margin:auto; background:#ffffff; border-radius:12px; overflow:hidden;">
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to,
-      subject,
-      html: `
-        <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 8px;">
-          <div style="background-color: #39A900; padding: 20px; text-align: center;">
-             <h1 style="color: white; margin: 0;">ODT - SENA</h1>
+          <!-- HEADER -->
+          <div style="background:#39A900; padding:20px; text-align:center;">
+            <img src="cid:logoSistema" style="max-width:220px;" />
           </div>
-          <div style="padding: 30px; color: #333;">
-            <h2 style="color: #39A900;">Restablecimiento de contraseña</h2>
-            <p>Has solicitado restablecer tu contraseña. Haz clic en el botón de abajo para continuar:</p>
-            
-            <div style="text-align: center; margin: 40px 0;">
-              <a href="${resetLink}" target="_blank" 
-                style="background-color:#39A900; color:white; padding:15px 25px;
-                text-decoration:none; border-radius:5px; font-weight: bold; display: inline-block;">
-                RESTABLECER MI CONTRASEÑA
+
+          <!-- BODY -->
+          <div style="padding:25px; color:#333;">
+            <h2 style="color:#39A900;">Hola ${name}</h2>
+
+            <p>
+              Hemos recibido una solicitud para <b>restablecer tu contraseña</b>.
+            </p>
+
+            <div style="text-align:center; margin:30px 0;">
+              <a href="${link}"
+                 style="
+                   background:#39A900;
+                   color:#fff;
+                   padding:15px 25px;
+                   border-radius:6px;
+                   text-decoration:none;
+                   font-weight:bold;
+                 ">
+                RESTABLECER CONTRASEÑA
               </a>
             </div>
-            
-            <p style="font-size: 12px; color: #999;">Si no solicitaste este cambio, ignora este correo.</p>
+
+            <p style="font-size:13px; color:#777;">
+              Este enlace expira en 15 minutos.
+            </p>
+
+            <p style="font-size:13px;">
+              Si no realizaste esta solicitud, puedes ignorar este mensaje.
+            </p>
           </div>
+
+          <!-- FOOTER -->
+          <div style="background:#f1f1f1; text-align:center; padding:12px; font-size:12px; color:#777;">
+            © ${new Date().getFullYear()} Sistema de Gestión<br />
+            Este es un mensaje automático, por favor no responder.
+          </div>
+
         </div>
-      `,
-    };
-
-    await transporter.sendMail(mailOptions);
-
-    res.status(200).json({ success: true, message: "Correo enviado correctamente" });
-  } catch (error) {
-    console.error("❌ Error enviando correo de restablecimiento:", error);
-    res.status(500).json({ success: false, message: "Error al enviar el correo", error: error.message });
-  }
+      </div>
+    `,
+  });
 };

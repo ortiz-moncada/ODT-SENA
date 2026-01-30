@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -44,28 +45,15 @@ console.log("\n📍 ================================");
 console.log("📍 REGISTRANDO RUTAS PRINCIPALES");
 console.log("📍 ================================\n");
 
-// Rutas
-app.use("/users", userRoutes);
-console.log("✅ Rutas /users registradas");
+// Rutas 
+app.use("/users", userRoutes); 
+app.use("/api/email", emailRoutes); 
+app.use("/areas", areaRouter); 
+app.use("/tasks", taskRouter); 
+app.use("/notify", notificationRoutes); 
+app.use("/api/drive", driveRoutes); 
 
-app.use("/api/email", emailRoutes);
-console.log("✅ Rutas /api/email registradas");
-
-app.use("/areas", areaRouter);
-console.log("✅ Rutas /areas registradas");
-
-app.use("/tasks", taskRouter);
-console.log("✅ Rutas /tasks registradas");
-
-app.use("/notify", notificationRoutes);
-console.log("✅ Rutas /notify registradas");
-
-app.use("/api/drive", driveRoutes);
-console.log("✅ Rutas /api/drive registradas");
-
-console.log("\n📍 ================================");
 console.log("📍 TODAS LAS RUTAS REGISTRADAS");
-console.log("📍 ================================\n");
 
 // Middleware de debug para TODAS las peticiones
 app.use((req, res, next) => {
