@@ -1,7 +1,3 @@
 node_modules/
 .env
-token.json
-credentials-oauth.json
-clave.json
 uploads/
-service-account.json
