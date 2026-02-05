@@ -4,11 +4,11 @@ import { verifyToken } from "../middleware/verifyToken.js";
 
 const router = express.Router();
 
-router.post("/create", postTasks);
-router.get("/seeTasks", getTasks);
-router.get("/byWorker/:worker", getTasksByWorker); 
-router.put("/:id",verifyToken, putTasks);
+router.post("/create",verifyToken, postTasks);
+router.get("/monthly", getMonthlyTasks); 
+router.get("/seeTasks", verifyToken, getTasks);
+router.get("/byWorker/:worker", verifyToken, getTasksByWorker); 
+router.put("/:id", verifyToken, putTasks);
 router.post("/entregar/:id", verifyToken, entregarTarea);
-router.get("/monthly", getMonthlyTasks);
 
 export default router;

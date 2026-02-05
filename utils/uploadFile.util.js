@@ -6,7 +6,6 @@ const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 const uploadFile = async (files, allowedExtensions = []) => {
   try {
-    const uploadDir = path.join(__dirname, "../uploads");
     
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });

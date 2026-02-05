@@ -4,9 +4,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com", // ✅ ANTES TENÍAS "gmail", DEBE SER "smtp.gmail.com"
-  port: 587,               // ✅ Usa 587 para evitar el bloqueo de Render (puerto 465 falla mucho)
-  secure: false,           // ✅ False para puerto 587
+  host: "smtp.gmail.com", 
+  port: 587,               
+  secure: false,           
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,

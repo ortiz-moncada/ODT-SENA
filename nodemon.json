@@ -1,0 +1,8 @@
+{
+  "ignore": [
+    "*.qr.png",
+    "bot_sessions/**",
+    "baileys.log",
+    "core.class.log"
+  ]
+}
