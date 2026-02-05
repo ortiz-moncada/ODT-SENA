@@ -4,11 +4,13 @@ import { transporter } from "../config/email.js";
 
 dotenv.config();
 
-// FUNCIÓN AUXILIAR PARA WHATSAPP 
+// --- FUNCIÓN AUXILIAR PARA WHATSAPP ---
 const enviarWhatsApp = async (numero, mensaje) => {
+    // Lee la URL de Render configurada en el panel de Environment
     const BOT_URL = process.env.BOT_URL || 'http://localhost:4001';
     
-    console.log(` Intentando enviar WA a: ${numero} a través de ${BOT_URL} `);
+    console.log(`--- Intentando enviar WA a: ${numero} a través de ${BOT_URL} ---`); 
+
     try {
         let numeroLimpio = String(numero).replace(/\D/g, '');
         if (numeroLimpio.length === 10 && !numeroLimpio.startsWith('57')) {
@@ -24,10 +26,13 @@ const enviarWhatsApp = async (numero, mensaje) => {
             })
         });
 
+        // Verificamos si la respuesta es correcta antes de parsear
+        if (!response.ok) throw new Error(`Error en el servidor del Bot: ${response.status}`);
+
         const data = await response.json();
-        console.log(`🚀 Respuesta del Bot:`, data); // LOG 2
+        console.log(`🚀 Respuesta del Bot en Render:`, data);
     } catch (error) {
-        console.error(`❌ Error real en el fetch:`, error.message);
+        console.error(`❌ Error real en el fetch de WhatsApp:`, error.message);
     }
 };
 
@@ -60,6 +65,7 @@ const prepararAdjuntos = (taskFiles) => {
   return adjuntosBase;
 };
 
+// --- NOTIFICACIÓN DE CREACIÓN ---
 export const enviarCorreoCreacionTarea = async (task) => {
   if (!task?.workers?.length) return;
 
@@ -69,11 +75,9 @@ export const enviarCorreoCreacionTarea = async (task) => {
   }
 
   for (const person of destinatarios) {
-    if (!person.gmail) continue;
-
-    try {
-      // 1. ENVÍO DE CORREO (Se mantiene exacto)
-      await transporter.sendMail({
+    // 1. INTENTO DE CORREO (Independiente)
+    if (person.gmail) {
+      transporter.sendMail({
         from: `"SENA ODT" <${process.env.EMAIL_USER}>`,
         to: person.gmail,
         subject: `Nueva tarea: ${task.name}`,
@@ -86,35 +90,33 @@ export const enviarCorreoCreacionTarea = async (task) => {
               </div>
               <div style="padding: 25px; color: #333; line-height: 1.6;">
                 <h2 style="margin-top: 0; color: #39A900;">¡Hola ${person.names}!</h2>
-                <p>Se ha registrado una <b>nueva tarea</b>. Aquí están los detalles:</p>
+                <p>Se ha registrado una <b>nueva tarea</b>.</p>
                 <div style="background: #f8f9fa; border-left: 5px solid #39A900; padding: 15px; margin: 20px 0;">
                   <p><b>Tarea:</b> ${task.name}</p>
                   <p><b>Entrega:</b> ${new Date(task.delivery_date).toLocaleDateString()}</p>
-                  <p><b>Área:</b> ${task.area_id?.name || "No especificada"}</p>
                 </div>
-                ${task.attached_files?.length > 0 ? `<p style="color: #666; font-size: 13px;">📎 Se han adjuntado los archivos correspondientes a este correo.</p>` : ""}
               </div>
             </div>
           </div>
         `,
-      });
+      }).catch(err => console.error(`📧 Error Correo (ignorado para no bloquear WA):`, err.message));
+    }
 
-      // 2. ENVÍO DE WHATSAPP (Solo si tiene teléfono)
-      if (person.phone) {
-          const mensajeWA = `🆕 *NUEVA TAREA ASIGNADA*\n\n` +
-                            `Hola *${person.names}*,\nSe ha registrado una tarea en el sistema:\n\n` +
-                            `📝 *Tarea:* ${task.name}\n` +
-                            `📅 *Entrega:* ${new Date(task.delivery_date).toLocaleDateString()}\n\n` +
-                            `_Revisa tu correo para ver los archivos adjuntos._`;
-          await enviarWhatsApp(person.phone, mensajeWA);
-      }
-
-    } catch (error) {
-      console.error(`❌ Error en notificación a ${person.gmail}:`, error.message);
+    // 2. INTENTO DE WHATSAPP (Independiente)
+    if (person.phone) {
+      const mensajeWA = `🆕 *NUEVA TAREA ASIGNADA*\n\n` +
+                        `Hola *${person.names}*,\nSe ha registrado una tarea:\n\n` +
+                        `📝 *Tarea:* ${task.name}\n` +
+                        `📅 *Entrega:* ${new Date(task.delivery_date).toLocaleDateString()}\n\n` +
+                        `_Revisa tu correo para ver los detalles._`;
+      
+      // No usamos 'await' aquí para que un timeout del bot no trabe el bucle
+      enviarWhatsApp(person.phone, mensajeWA).catch(err => console.error(`❌ Error WA:`, err.message));
     }
   }
 };
 
+// --- NOTIFICACIÓN DE CAMBIO DE ESTADO ---
 export const enviarCorreoCambioEstadoTarea = async (task, estadoAnterior) => {
   if (!task?.workers?.length) return;
 
@@ -128,47 +130,32 @@ export const enviarCorreoCambioEstadoTarea = async (task, estadoAnterior) => {
   }
 
   for (const person of destinatarios) {
-    if (!person.gmail) continue;
-
-    try {
-      // 1. ENVÍO DE CORREO (Se mantiene exacto)
-      await transporter.sendMail({
+    // 1. CORREO
+    if (person.gmail) {
+      transporter.sendMail({
         from: `"SENA ODT" <${process.env.EMAIL_USER}>`,
         to: person.gmail,
         subject: `Actualización de tarea: ${task.name}`,
         attachments: prepararAdjuntos(task.attached_files),
         html: `
-          <div style="font-family: Arial, sans-serif; background-color: #f4f6f9; padding: 30px;">
-            <div style="max-width: 600px; margin: auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,0.15);">
-              <div style="background: #39A900; padding: 20px; text-align: center;">
-                <img src="cid:logoSena" alt="SENA ODT" style="max-width: 80px;" />
-              </div>
-              <div style="padding: 25px; color: #333;">
-                <h2 style="margin-top: 0; color: #39A900;">Hola ${person.names}</h2>
-                <p>El estado de la tarea <b>${task.name}</b> ha cambiado.</p>
-                <div style="background: #f8f9fa; border-left: 5px solid #39A900; padding: 15px; margin: 20px 0;">
-                  <p><b>Estado anterior:</b> ${stateMap[estadoAntes] || "Desconocido"}</p>
-                  <p><b>Nuevo estado:</b> ${stateMap[estadoNuevo] || "Desconocido"}</p>
-                </div>
-                ${task.attached_files?.length > 0 ? `<p style="color: #666; font-size: 13px;"> Se han adjuntado los archivos actualizados de la tarea.</p>` : ""}
-              </div>
-            </div>
+          <div style="padding: 25px; color: #333;">
+            <h2 style="color: #39A900;">Hola ${person.names}</h2>
+            <p>El estado de la tarea <b>${task.name}</b> ha cambiado.</p>
+            <p><b>Antes:</b> ${stateMap[estadoAntes] || "Desconocido"}</p>
+            <p><b>Ahora:</b> ${stateMap[estadoNuevo] || "Desconocido"}</p>
           </div>
         `,
-      });
+      }).catch(err => console.error(`📧 Error Correo Cambio Estado:`, err.message));
+    }
 
-      // 2. ENVÍO DE WHATSAPP (Solo si tiene teléfono)
-      if (person.phone) {
-          const mensajeWA = `*ACTUALIZACIÓN DE TAREA*\n\n` +
-                            `Hola *${person.names}*,\nEl estado de la tarea *${task.name}* ha cambiado:\n\n` +
-                            `*Antes:* ${stateMap[estadoAntes] || "Desconocido"}\n` +
-                            `*Ahora:* ${stateMap[estadoNuevo] || "Desconocido"}\n\n` +
-                            `_Ingresa al sistema para más detalles._`;
-          await enviarWhatsApp(person.phone, mensajeWA);
-      }
-
-    } catch (error) {
-      console.error(` Error en cambio de estado a ${person.gmail}:`, error.message);
+    // 2. WHATSAPP
+    if (person.phone) {
+      const mensajeWA = `*ACTUALIZACIÓN DE TAREA*\n\n` +
+                        `Hola *${person.names}*,\n*${task.name}* cambió de estado:\n\n` +
+                        `*Antes:* ${stateMap[estadoAntes] || "Desconocido"}\n` +
+                        `*Ahora:* ${stateMap[estadoNuevo] || "Desconocido"}`;
+      
+      enviarWhatsApp(person.phone, mensajeWA).catch(err => console.error(`❌ Error WA Cambio Estado:`, err.message));
     }
   }
 };
