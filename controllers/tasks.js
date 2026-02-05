@@ -60,7 +60,7 @@ export const postTasks = async (req, res) => {
 
     await newTask.save();
 
-    // ARREGLADO: Se añade "phone" al populate
+    // POPULATE COMPLETO (Incluye phone para WhatsApp)
     const taskPopulated = await Task.findById(newTask._id)
       .populate("workers", "names gmail phone")
       .populate("leader", "names gmail phone")
@@ -69,6 +69,7 @@ export const postTasks = async (req, res) => {
 
     await notificarCreacionTarea(taskPopulated, userId);
 
+    // Disparo asíncrono de Email y WA
     setImmediate(() => {
       enviarCorreoCreacionTarea(taskPopulated).catch(err => console.error("📧 Email/WA Error:", err.message));
     });
@@ -88,18 +89,24 @@ export const putTasks = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "ID inválido" });
     if (!userId) return res.status(401).json({ error: "No autorizado" });
 
+    // 1. Obtener estado anterior
     const taskBefore = await Task.findById(id);
     if (!taskBefore) return res.status(404).json({ error: "Tarea no encontrada" });
 
-    // ARREGLADO: Se añade "phone" al populate
+    // 2. Actualizar y Popular (Incluye phone)
     const taskUpdated = await Task.findByIdAndUpdate(id, req.body, { new: true })
       .populate("workers", "names gmail phone")
       .populate("tribute_id", "names gmail phone")
       .populate("area_id", "name");
 
+    // 3. Notificar solo si el estado cambió realmente
     if (req.body.stateTask && Number(req.body.stateTask) !== Number(taskBefore.stateTask)) {
       await crearNotificacionCambioEstado(taskUpdated, taskBefore.stateTask, req.body.stateTask, userId);
-      enviarCorreoCambioEstadoTarea(taskUpdated, taskBefore.stateTask).catch(err => console.error("📧 Email/WA Error:", err.message));
+      
+      setImmediate(() => {
+        enviarCorreoCambioEstadoTarea(taskUpdated, taskBefore.stateTask)
+          .catch(err => console.error("📧 Email/WA Error en PutTasks:", err.message));
+      });
     }
 
     res.json(taskUpdated);
@@ -140,7 +147,7 @@ export const entregarTarea = async (req, res) => {
       drive_id: file.id, uploaded_at: new Date()
     };
 
-    // ARREGLADO: Se añade "phone" al populate
+    // Actualizar a estado 2 (Entregada/Revisión) y popular phone
     const updatedTask = await Task.findByIdAndUpdate(id, {
       $set: { stateTask: 2, deliveredAt: new Date(), deliveredFile: nuevoAdjunto.url },
       $push: { attached_files: nuevoAdjunto }
@@ -150,7 +157,11 @@ export const entregarTarea = async (req, res) => {
       .populate("area_id", "name");
 
     await notificarEntregaTarea(updatedTask, userId);
-    enviarCorreoCambioEstadoTarea(updatedTask, taskAntes.stateTask).catch(console.error);
+    
+    setImmediate(() => {
+        enviarCorreoCambioEstadoTarea(updatedTask, taskAntes.stateTask)
+            .catch(err => console.error("❌ Error WA en Entrega:", err.message));
+    });
 
     res.json({ message: "Tarea entregada", task: updatedTask });
   } catch (error) {
@@ -159,11 +170,10 @@ export const entregarTarea = async (req, res) => {
   }
 };
 
-// --- MÉTODOS DE OBTENCIÓN ---
+// --- MÉTODOS DE OBTENCIÓN (Todos con phone) ---
 
 export const getTasks = async (req, res) => {
   try {
-    // ARREGLADO: Se añade "phone" al populate
     const tasks = await Task.find()
       .populate("workers", "names gmail phone")
       .populate("leader", "names gmail phone")
@@ -178,7 +188,6 @@ export const getTasks = async (req, res) => {
 export const getTasksByWorker = async (req, res) => {
   try {
     const { worker } = req.params;
-    // ARREGLADO: Se añade "phone" al populate
     const tasks = await Task.find({ workers: worker })
       .populate("workers", "names gmail phone")
       .populate("leader", "names gmail phone")
@@ -191,11 +200,11 @@ export const getTasksByWorker = async (req, res) => {
 
 export const getMonthlyTasks = async (req, res) => {
   try {
-    // ARREGLADO: Se añade "phone" al populate
-    const tasks = await Task.find({ isMonthly: true }).populate("workers", "names gmail phone");
+    const tasks = await Task.find({ isMonthly: true })
+      .populate("workers", "names gmail phone");
     res.json(tasks);
   } catch (error) {
-    res.status(500).json({ error: "Error" });
+    res.status(500).json({ error: "Error al obtener tareas mensuales" });
   }
 };
 
