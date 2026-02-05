@@ -6,33 +6,45 @@ dotenv.config();
 
 // --- FUNCIÓN AUXILIAR PARA WHATSAPP ---
 const enviarWhatsApp = async (numero, mensaje) => {
-    // Lee la URL de Render configurada en el panel de Environment
     const BOT_URL = process.env.BOT_URL || 'http://localhost:4001';
     
     console.log(`--- Intentando enviar WA a: ${numero} a través de ${BOT_URL} ---`); 
 
     try {
-        let numeroLimpio = String(numero).replace(/\D/g, '');
+        // Limpieza extrema del número
+        let numeroLimpio = String(numero).replace(/\D/g, '').trim();
+        
         if (numeroLimpio.length === 10 && !numeroLimpio.startsWith('57')) {
             numeroLimpio = '57' + numeroLimpio;
         }
 
+        // Estructura de datos (Payload)
+        // Nota: Algunos bots prefieren 'number' otros 'chatId'
+        const payload = {
+            number: numeroLimpio, 
+            message: mensaje
+        };
+
         const response = await fetch(`${BOT_URL}/v1/messages`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                number: numeroLimpio,
-                message: mensaje
-            })
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
         });
 
-        // Verificamos si la respuesta es correcta antes de parsear
-        if (!response.ok) throw new Error(`Error en el servidor del Bot: ${response.status}`);
+        // Si hay error 400, intentamos leer el motivo exacto del servidor
+        if (!response.ok) {
+            const errorTexto = await response.text();
+            throw new Error(`Servidor respondió ${response.status}: ${errorTexto}`);
+        }
 
         const data = await response.json();
         console.log(`🚀 Respuesta del Bot en Render:`, data);
     } catch (error) {
-        console.error(`❌ Error real en el fetch de WhatsApp:`, error.message);
+        // Este log te dirá exactamente por qué el bot devolvió 400
+        console.error(`❌ Error en el fetch de WhatsApp:`, error.message);
     }
 };
 
@@ -65,7 +77,6 @@ const prepararAdjuntos = (taskFiles) => {
   return adjuntosBase;
 };
 
-// --- NOTIFICACIÓN DE CREACIÓN ---
 export const enviarCorreoCreacionTarea = async (task) => {
   if (!task?.workers?.length) return;
 
@@ -75,7 +86,7 @@ export const enviarCorreoCreacionTarea = async (task) => {
   }
 
   for (const person of destinatarios) {
-    // 1. INTENTO DE CORREO (Independiente)
+    // 1. CORREO (No bloqueante)
     if (person.gmail) {
       transporter.sendMail({
         from: `"SENA ODT" <${process.env.EMAIL_USER}>`,
@@ -99,10 +110,10 @@ export const enviarCorreoCreacionTarea = async (task) => {
             </div>
           </div>
         `,
-      }).catch(err => console.error(`📧 Error Correo (ignorado para no bloquear WA):`, err.message));
+      }).catch(err => console.error(`📧 Error Correo:`, err.message));
     }
 
-    // 2. INTENTO DE WHATSAPP (Independiente)
+    // 2. WHATSAPP (No bloqueante)
     if (person.phone) {
       const mensajeWA = `🆕 *NUEVA TAREA ASIGNADA*\n\n` +
                         `Hola *${person.names}*,\nSe ha registrado una tarea:\n\n` +
@@ -110,13 +121,11 @@ export const enviarCorreoCreacionTarea = async (task) => {
                         `📅 *Entrega:* ${new Date(task.delivery_date).toLocaleDateString()}\n\n` +
                         `_Revisa tu correo para ver los detalles._`;
       
-      // No usamos 'await' aquí para que un timeout del bot no trabe el bucle
       enviarWhatsApp(person.phone, mensajeWA).catch(err => console.error(`❌ Error WA:`, err.message));
     }
   }
 };
 
-// --- NOTIFICACIÓN DE CAMBIO DE ESTADO ---
 export const enviarCorreoCambioEstadoTarea = async (task, estadoAnterior) => {
   if (!task?.workers?.length) return;
 
@@ -130,32 +139,19 @@ export const enviarCorreoCambioEstadoTarea = async (task, estadoAnterior) => {
   }
 
   for (const person of destinatarios) {
-    // 1. CORREO
     if (person.gmail) {
       transporter.sendMail({
         from: `"SENA ODT" <${process.env.EMAIL_USER}>`,
         to: person.gmail,
         subject: `Actualización de tarea: ${task.name}`,
         attachments: prepararAdjuntos(task.attached_files),
-        html: `
-          <div style="padding: 25px; color: #333;">
-            <h2 style="color: #39A900;">Hola ${person.names}</h2>
-            <p>El estado de la tarea <b>${task.name}</b> ha cambiado.</p>
-            <p><b>Antes:</b> ${stateMap[estadoAntes] || "Desconocido"}</p>
-            <p><b>Ahora:</b> ${stateMap[estadoNuevo] || "Desconocido"}</p>
-          </div>
-        `,
-      }).catch(err => console.error(`📧 Error Correo Cambio Estado:`, err.message));
+        html: `<div style="padding: 25px; color: #333;"><h2 style="color: #39A900;">Hola ${person.names}</h2><p>El estado cambió.</p></div>`,
+      }).catch(err => console.error(`📧 Error Correo Estado:`, err.message));
     }
 
-    // 2. WHATSAPP
     if (person.phone) {
-      const mensajeWA = `*ACTUALIZACIÓN DE TAREA*\n\n` +
-                        `Hola *${person.names}*,\n*${task.name}* cambió de estado:\n\n` +
-                        `*Antes:* ${stateMap[estadoAntes] || "Desconocido"}\n` +
-                        `*Ahora:* ${stateMap[estadoNuevo] || "Desconocido"}`;
-      
-      enviarWhatsApp(person.phone, mensajeWA).catch(err => console.error(`❌ Error WA Cambio Estado:`, err.message));
+      const mensajeWA = `*ACTUALIZACIÓN DE TAREA*\n\nHola *${person.names}*,\n*${task.name}* cambió de estado.`;
+      enviarWhatsApp(person.phone, mensajeWA).catch(err => console.error(`❌ Error WA Estado:`, err.message));
     }
   }
 };
