@@ -27,9 +27,9 @@ const taskSchema = new mongoose.Schema({
   ],
 
   isMonthly: { type: Boolean, default: false },
-  monthlyDay: { type: Number, default: 28 }, // día del mes (1–28 recomendado)
+  monthlyDay: { type: Number, default: 28 }, 
+  monthlyPlazo: { type: Number, default: null },
   parentTask: { type: mongoose.Schema.Types.ObjectId, ref: 'tasks' },
-
 
   deliveredFile: {
     type: String,
@@ -40,8 +40,8 @@ const taskSchema = new mongoose.Schema({
     enum: ["OK", "FAILED", "PENDING"],
     default: "PENDING",
   },
-  deliveredAt: Date,
-
+  deliveredAt: Date}, { 
+  timestamps: true 
 });
 
 // Nombres de los estados
