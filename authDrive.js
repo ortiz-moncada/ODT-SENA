@@ -110,11 +110,8 @@ async function uploadFileToDrive(files, folderName, apprenticeData, projectId = 
       uploadedFiles.push(response.data);
     }
 
-    console.log('');
-    console.log('✅ =================================================');
     console.log(`   ${uploadedFiles.length} ARCHIVO(S) SUBIDO(S)`);
-    console.log('✅ =================================================');
-    console.log('');
+
 
     return {
       ok: true,

@@ -121,10 +121,6 @@ export const sendRecoveryEmail = async (req, res) => {
     // Si tu URL normal es localhost:5173/#/login, usa el # abajo:
     const resetLink = `${frontendUrl}/restablecer-password/${resetToken}`;
 
-    // ESTO ES PARA TI: Mira la terminal del backend al enviar el correo
-    console.log("🔗 URL detectada del .env:", process.env.FRONTEND_URL);
-    console.log("🚀 Enlace final enviado:", resetLink);
-
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {

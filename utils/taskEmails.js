@@ -155,3 +155,111 @@ export const enviarCorreoCambioEstadoTarea = async (task, estadoAnterior) => {
     }
   }
 };
+
+export const enviarCorreoTareaPorVencer = async (task, horasRestantes, admins = []) => {
+
+  // ---------- Datos de fecha ----------
+  const esMonthly = task.isMonthly && task.monthlyPlazo;
+  const fechaEntrega = esMonthly
+    ? (() => {
+        // Para mensuales, la fecha límite es el día monthlyPlazo del mes actual
+        const hoy = new Date();
+        return new Date(hoy.getFullYear(), hoy.getMonth(), task.monthlyPlazo);
+      })()
+    : new Date(task.delivery_date);
+
+  const fechaFormateada = fechaEntrega.toLocaleDateString("es-CO", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+  const etiquetaUrgencia = horasRestantes === 24
+    ? { color: "#e53e3e", texto: " VENCE EN 24 HORAS", icono: "🔴" }
+    : { color: "#dd6b20", texto: " VENCE EN 48 HORAS", icono: "🟠" };
+
+
+  const gmailsVistos = new Set();
+  const destinatarios = [];
+
+  const agregarPersona = (persona, etiquetaRol) => {
+    if (!persona || gmailsVistos.has(persona.gmail)) return;
+    gmailsVistos.add(persona.gmail);
+    destinatarios.push({ ...persona, etiquetaRol });
+  };
+
+  // 1. Workers
+  (task.workers || []).forEach(w => agregarPersona(w, "Trabajador asignado"));
+
+  // 2. Tribute (cliente)
+  if (task.tribute_id?.gmail) agregarPersona(task.tribute_id, "Solicitante");
+
+  // 3. Admins y superadmins (rol 1 y 2)
+  (admins || []).forEach(a => {
+    const etiqueta = a.rol === 1 ? "Super Admin" : "Administrador";
+    agregarPersona(a, etiqueta);
+  });
+
+  for (const person of destinatarios) {
+
+    if (person.gmail) {
+      transporter.sendMail({
+        from: `"SENA ODT" <${process.env.EMAIL_USER}>`,
+        to: person.gmail,
+        subject: `${etiquetaUrgencia.icono} Tarea por vencer: ${task.name}`,
+        attachments: prepararAdjuntos(task.attached_files),
+        html: `
+          <div style="font-family: Arial, sans-serif; background-color: #f4f6f9; padding: 30px;">
+            <div style="max-width: 600px; margin: auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,0.15);">
+
+              <!-- Cabecera -->
+              <div style="background: ${etiquetaUrgencia.color}; padding: 20px; text-align: center;">
+                <img src="cid:logoSena" alt="SENA ODT" style="max-width: 80px;" />
+                <h1 style="color: white; margin: 10px 0 0; font-size: 18px; letter-spacing: 1px;">
+                  ${etiquetaUrgencia.texto}
+                </h1>
+              </div>
+
+              <!-- Cuerpo -->
+              <div style="padding: 25px; color: #333; line-height: 1.6;">
+                <h2 style="margin-top: 0; color: ${etiquetaUrgencia.color};">
+                  ¡Hola, ${person.names}!
+                </h2>
+                <p>
+                  La siguiente tarea 
+                  <b>vence en ${horasRestantes} horas</b>. 
+                  Por favor toma las acciones necesarias.
+                </p>
+
+                <!-- Tarjeta de tarea -->
+                <div style="background: #f8f9fa; border-left: 5px solid ${etiquetaUrgencia.color}; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;">
+                  <p style="margin: 6px 0;"><b>📝 Tarea:</b> ${task.name}</p>
+                  <p style="margin: 6px 0;"><b>📅 Fecha límite:</b> ${fechaFormateada}</p>
+                  <p style="margin: 6px 0;"><b>🏢 Área:</b> ${task.area_id?.name || "Sin área"}</p>
+                  <p style="margin: 6px 0;"><b>👤 Tu rol:</b> ${person.etiquetaRol}</p>
+                  ${esMonthly ? `<p style="margin: 6px 0;"><b>🔁 Tipo:</b> Tarea mensual (día ${task.monthlyPlazo})</p>` : ""}
+                </div>
+
+                <p style="color: #666; font-size: 13px; margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px;">
+                  Este es un mensaje automático del sistema SENA ODT. No respondas este correo.
+                </p>
+              </div>
+            </div>
+          </div>
+        `,
+      }).catch(err => console.error(`📧 Error Correo PorVencer [${person.gmail}]:`, err.message));
+    }
+
+    if (person.phone) {
+      const mensajeWA =
+        `${etiquetaUrgencia.icono} *${etiquetaUrgencia.texto.replace(/[⚠️⏰]/g, "").trim()}*\n\n` +
+        `Hola *${person.names}* _(${person.etiquetaRol})_,\n\n` +
+        `La tarea *${task.name}* vence en *${horasRestantes} horas*.\n\n` +
+        `📅 *Fecha límite:* ${fechaFormateada}\n` +
+        `🏢 *Área:* ${task.area_id?.name || "Sin área"}\n` +
+        (esMonthly ? `🔁 *Tarea mensual* (día ${task.monthlyPlazo})\n` : "") +
+        `\n_Revisa el sistema SENA ODT para más detalles._`;
+
+      enviarWhatsApp(person.phone, mensajeWA)
+        .catch(err => console.error(`❌ Error WA PorVencer [${person.phone}]:`, err.message));
+    }
+  }
+};

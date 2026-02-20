@@ -57,7 +57,6 @@ const getArea = async (req, res) => {
 
     res.json(areas);
   } catch (error) {
-    console.log(error);
     res.status(400).json({ error: "Error al ver las áreas" });
   }
 };
@@ -78,12 +77,8 @@ const putArea = async (req, res) => {
 
     const { name, description, admin, state, worker } = req.body;
 
-    console.log("📝 Actualizando área:", id);
-    console.log("📋 Datos recibidos:", req.body);
-
     // Si hay un nuevo admin y es diferente al actual
     if (admin && admin !== areaActual.admin.toString()) {
-      console.log("🔄 Cambiando administrador...");
       
       // Validar que el nuevo admin existe
       const nuevoAdmin = await usersModel.findById(admin);
@@ -97,14 +92,12 @@ const putArea = async (req, res) => {
           areaActual.admin,
           { $unset: { areaId: "" } }
         );
-        console.log("✅ Área removida del admin anterior");
       }
 
       // Asignar área al nuevo admin
       await usersModel.findByIdAndUpdate(admin, {
         areaId: id
       });
-      console.log("✅ Área asignada al nuevo admin");
     }
 
     // Preparar datos de actualización
@@ -121,8 +114,6 @@ const putArea = async (req, res) => {
       updateData,
       { new: true }
     ).populate('admin', 'names').populate('worker', 'names');
-
-    console.log("✅ Área actualizada correctamente");
 
     res.status(200).json({
       message: "Área actualizada correctamente",

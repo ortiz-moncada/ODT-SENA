@@ -21,6 +21,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:3001',
   process.env.FRONTEND_URL
 ].filter(Boolean); 
 
@@ -41,10 +42,6 @@ app.use(fileUpload({
   debug: true
 }));
 
-console.log("\n📍 ================================");
-console.log("📍 REGISTRANDO RUTAS PRINCIPALES");
-console.log("📍 ================================\n");
-
 // Rutas 
 app.use("/users", userRoutes); 
 app.use("/api/email", emailRoutes); 
@@ -53,7 +50,6 @@ app.use("/tasks", taskRouter);
 app.use("/notify", notificationRoutes); 
 app.use("/api/drive", driveRoutes); 
 
-console.log("📍 TODAS LAS RUTAS REGISTRADAS");
 
 // Middleware de debug para TODAS las peticiones
 app.use((req, res, next) => {
@@ -77,7 +73,7 @@ app.use((req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4000 || 3001;
 
 mongoose
   .connect(process.env.CNX_MONGO)
@@ -85,10 +81,8 @@ mongoose
     console.log("\n✅ Conectado a MongoDB");
     console.log("🌐 CORS habilitado para:", allowedOrigins);
     app.listen(PORT, () => {
-      console.log(`\n🚀 ================================`);
       console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
       console.log(`🚀 http://localhost:${PORT}`);
-      console.log(`🚀 ================================\n`);
     });
   })
   .catch((err) => {
