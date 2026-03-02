@@ -114,12 +114,11 @@ export const sendRecoveryEmail = async (req, res) => {
 
     const resetToken = createResetToken(user._id);
     
-    // Prioridad 1: Variable del .env | Prioridad 2: Backup manual
-   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-    
-    // IMPORTANTE: Verifica si tu router de Vue usa Hash (#). 
-    // Si tu URL normal es localhost:5173/#/login, usa el # abajo:
-    const resetLink = `${frontendUrl}/restablecer-password/${resetToken}`;
+    // En tu controlador (sendRecoveryEmail)
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+// NOTA: No pongas "/" después de los 3000. El Hash (#) va pegado al puerto.
+const resetLink = `${frontendUrl}/#/restablecer-password/${resetToken}`;
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -134,12 +133,15 @@ export const sendRecoveryEmail = async (req, res) => {
       to: gmail,
       subject: "Restablecimiento de contraseña",
       html: `
-        <div style="font-family: Arial; padding: 20px;">
+        <div style="font-family: Arial; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
           <h2 style="color: #39A900;">Hola, ${user.names}</h2>
-          <p>Haz clic en el botón para restablecer tu clave:</p>
-          <a href="${resetLink}" style="background: #39A900; color: white; padding: 10px; text-decoration: none;">
-            RESTABLECER CONTRASEÑA
-          </a>
+          <p>Has solicitado restablecer tu contraseña. Haz clic en el botón de abajo para continuar:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetLink}" style="background: #39A900; color: white; padding: 12px 25px; text-decoration: none; font-weight: bold; border-radius: 4px; display: inline-block;">
+              RESTABLECER CONTRASEÑA
+            </a>
+          </div>
+          <p style="font-size: 12px; color: #666;">Si no solicitaste este cambio, puedes ignorar este correo.</p>
         </div>`
     });
 

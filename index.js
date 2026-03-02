@@ -1,48 +1,55 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import mongoose from "mongoose";
 import fileUpload from "express-fileupload";
+import path from "path";
+import { fileURLToPath } from "url";
 
+// IMPORTAMOS LA FUNCIÓN DEL BOT
+import { main } from "./bot/base-js-baileys-mongo/src/app.js"; 
+
+// Importación de rutas
 import userRoutes from "./routes/users.js";
 import emailRoutes from "./routes/email.js";
 import areaRouter from "./routes/areas.js";
 import taskRouter from "./routes/tasks.js";
-import "./config/cronRecorderTask.js";
-import "./config/monthlyTasks.js";
 import notificationRoutes from "./routes/notify.js";
 import driveRoutes from "./routes/drive.routes.js";
 
-dotenv.config();
+// Configuración de __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  process.env.FRONTEND_URL
-].filter(Boolean); 
-
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
-
+// --- MIDDLEWARES ---
+const allowedOrigins = ['http://localhost:4000', process.env.FRONTEND_URL].filter(Boolean); 
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(fileUpload({ useTempFiles: false, createParentPath: true }));
 
-app.use(fileUpload({
-  useTempFiles: false,
-  tempFileDir: './uploads/',
-  createParentPath: true,
-  limits: { fileSize: 50 * 1024 * 1024 },
-  parseNested: true,
-  debug: true
-}));
+// Archivos estáticos
+app.use(express.static(path.join(__dirname, "public", "dist")));
 
-// Rutas 
+// --- RUTA PARA VER EL QR EN EL NAVEGADOR ---
+app.get("/ver-qr", (req, res) => {
+    const qrPath = path.resolve(process.cwd(), "bot.qr.png");
+    res.sendFile(qrPath, (err) => {
+        if (err) {
+            res.status(404).send(`
+                <body style="font-family:sans-serif; text-align:center; padding:50px;">
+                    <h1>QR no generado aún</h1>
+                    <p>Espera unos segundos y recarga. Revisa la consola.</p>
+                    <script>setTimeout(()=>location.reload(), 5000)</script>
+                </body>
+            `);
+        }
+    });
+});
+
+// --- RUTAS API ---
 app.use("/users", userRoutes); 
 app.use("/api/email", emailRoutes); 
 app.use("/areas", areaRouter); 
@@ -50,41 +57,31 @@ app.use("/tasks", taskRouter);
 app.use("/notify", notificationRoutes); 
 app.use("/api/drive", driveRoutes); 
 
-
-// Middleware de debug para TODAS las peticiones
-app.use((req, res, next) => {
-  console.log(`\n🌐 ${req.method} ${req.url}`);
-  console.log(`📦 Body:`, req.body);
-  console.log(`📝 Query:`, req.query);
-  next();
+// SPA Frontend
+app.get(/^\/(?!api|users|areas|tasks|notify|ver-qr).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dist", "index.html"));
 });
 
-app.get("/", (req, res) => {
-  res.send("Backend funcionando correctamente");
-});
+// --- ARRANQUE ---
+const PORT = process.env.PORT || 4000;
+const BOT_PORT = process.env.BOT_PORT;
 
-// Middleware para rutas no encontradas
-app.use((req, res) => {
-  console.log(`❌ Ruta no encontrada: ${req.method} ${req.url}`);
-  res.status(404).json({ 
-    error: "Ruta no encontrada",
-    method: req.method,
-    url: req.url
-  });
-});
-
-const PORT = process.env.PORT || 4000 || 3001;
-
-mongoose
-  .connect(process.env.CNX_MONGO)
+mongoose.connect(process.env.CNX_MONGO)
   .then(() => {
-    console.log("\n✅ Conectado a MongoDB");
-    console.log("🌐 CORS habilitado para:", allowedOrigins);
-    app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-      console.log(`🚀 http://localhost:${PORT}`);
+    console.log("MongoDB Conectado");
+    
+    // Primero levantamos Express
+    app.listen(PORT, async () => {
+      console.log(`🚀 Servidor Express en: http://localhost:${PORT}`);
+      console.log(`📸 QR disponible en: http://localhost:${PORT}/ver-qr`);
+      
+      // LUEGO inicializamos el bot una sola vez
+      try {
+          await main(); 
+          console.log("🤖 WhatsApp Bot inicializado");
+      } catch (e) {
+          console.error("❌ Error en Bot:", e.message);
+      }
     });
   })
-  .catch((err) => {
-    console.error("❌ Error conectando a MongoDB:", err);
-  });
+  .catch(err => console.error("❌ Error Mongo:", err));
