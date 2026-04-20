@@ -7,7 +7,7 @@ dotenv.config();
 
 const enviarNotificacionWhatsApp = async (numero, mensaje) => {
   try {
-    const BOT_URL = process.env.BOT_URL || 'http://localhost:4001';
+    const BOT_URL = process.env.BOT_URL || 'http://localhost:3008';
     let numeroLimpio = String(numero).replace(/\D/g, '');
 
     if (!numeroLimpio.startsWith('57') && numeroLimpio.length === 10) {

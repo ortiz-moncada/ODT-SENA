@@ -10,7 +10,7 @@ const router = Router();
 router.get("/correo/:gmail", sendRecoveryEmail);
 router.post("/reset-password-update", resetPasswordUpdate);
 router.post("/login", loginUser);
-router.post("/register", [verifyToken, userValidation, validateFields], postUser);
+router.post("/register", /* [verifyToken, userValidation, validateFields] */ postUser);
 router.get("/seeUsers", verifyToken, getUser); 
 router.get("/active", verifyToken, getActive); 
 router.get("/inactive", verifyToken, getInactive); 

@@ -154,7 +154,7 @@ const resetLink = `${frontendUrl}/#/restablecer-password/${resetToken}`;
 
 export const resetPasswordUpdate = async (req, res) => {
   const { token, newPassword } = req.body;
-  try {
+  try {55
     // Verificar token (Asegúrate que JWT_SECRET en .env sea igual al de createResetToken)
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key_odt');
     
